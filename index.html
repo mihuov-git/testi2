@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tämän päivän lounaat</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #172033;
+      --muted: #647089;
+      --border: #dbe2ee;
+      --ok: #1f8f58;
+      --error: #c33d3d;
+      --accent: #2557d6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 16px 48px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1.1;
+    }
+    .lead, .meta, .footer {
+      color: var(--muted);
+    }
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 20px 0 28px;
+    }
+    button {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      font: inherit;
+    }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 4px 16px rgba(18, 30, 56, 0.06);
+    }
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .status {
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 5px 10px;
+      white-space: nowrap;
+    }
+    .status.ok { background: rgba(31,143,88,.12); color: var(--ok); }
+    .status.error { background: rgba(195,61,61,.12); color: var(--error); }
+    h2 { margin: 0; font-size: 1.25rem; }
+    .subtitle { color: var(--muted); margin-bottom: 8px; }
+    .price { font-weight: 700; margin: 10px 0 12px; }
+    ul { margin: 0; padding-left: 18px; }
+    .empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+    details {
+      margin-top: 28px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px 18px;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 0.9rem;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <p class="lead">Kolmen ravintolan tämän päivän lounaat yhdellä sivulla.</p>
+    <h1>Tämän päivän lounaat</h1>
+    <p id="day" class="meta">Päivä: ladataan...</p>
+    <p id="updated" class="meta">Päivitetty: -</p>
+
+    <div class="toolbar">
+      <button id="reload" class="primary">Lataa data uudelleen</button>
+      <a href="data/lunches.json" target="_blank" rel="noopener noreferrer"><button>Katso JSON-data</button></a>
+    </div>
+
+    <section id="cards" class="grid" aria-live="polite"></section>
+
+    <details>
+      <summary>Näytä debug</summary>
+      <pre id="debug">Ei debug-tietoa.</pre>
+    </details>
+
+    <p class="footer">Lähteet: <a href="https://www.raflaamo.fi/fi/ravintola/turku/grill-it-marina-turku/menu/lounas">Grill it! Marina</a>, <a href="https://www.viidesnayttamo.fi/?page_id=73">Viides Näyttämö</a>, <a href="https://www.frescoravintolat.fi/lounas/aitiopaikan-lounaslista/">Aitiopaikka</a>.</p>
+  </main>
+
+  <script>
+    const dayEl = document.getElementById('day');
+    const updatedEl = document.getElementById('updated');
+    const cardsEl = document.getElementById('cards');
+    const debugEl = document.getElementById('debug');
+    const reloadBtn = document.getElementById('reload');
+
+    const dayNames = {
+      maanantai: 'Maanantai',
+      tiistai: 'Tiistai',
+      keskiviikko: 'Keskiviikko',
+      torstai: 'Torstai',
+      perjantai: 'Perjantai',
+      lauantai: 'Lauantai',
+      sunnuntai: 'Sunnuntai'
+    };
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function renderRestaurant(item) {
+      const items = Array.isArray(item.items) ? item.items : [];
+      const itemHtml = items.length
+        ? `<ul>${items.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+        : '<p class="empty">Lounasta ei saatu haettua juuri nyt.</p>';
+
+      const statusText = item.status === 'ok' ? 'OK' : 'Virhe';
+      return `
+        <article class="card">
+          <div class="topline">
+            <div>
+              <h2>${escapeHtml(item.name)}</h2>
+              <div class="subtitle">${escapeHtml(item.subtitle || '')}</div>
+            </div>
+            <span class="status ${item.status === 'ok' ? 'ok' : 'error'}">${statusText}</span>
+          </div>
+          <div class="price">Hinta: ${escapeHtml(item.price || '-')}</div>
+          ${itemHtml}
+          <p><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Avaa lähde</a></p>
+        </article>
+      `;
+    }
+
+    async function loadData() {
+      cardsEl.innerHTML = '<article class="card">Ladataan...</article>';
+      try {
+        const res = await fetch(`data/lunches.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        const dayLabel = dayNames[data.today_name] || data.today_name || '-';
+        dayEl.textContent = `Päivä: ${dayLabel}`;
+        updatedEl.textContent = `Päivitetty: ${data.updated_at_fi || '-'}`;
+        debugEl.textContent = Array.isArray(data.debug) && data.debug.length
+          ? data.debug.join('\n')
+          : 'Ei debug-tietoa.';
+
+        const restaurants = Array.isArray(data.restaurants) ? data.restaurants : [];
+        cardsEl.innerHTML = restaurants.map(renderRestaurant).join('');
+
+        if (!restaurants.length) {
+          cardsEl.innerHTML = '<article class="card">Data puuttuu.</article>';
+        }
+      } catch (error) {
+        cardsEl.innerHTML = `<article class="card">Datan lataus epäonnistui: ${escapeHtml(error.message)}</article>`;
+      }
+    }
+
+    reloadBtn.addEventListener('click', loadData);
+    loadData();
+  </script>
+</body>
+</html>
